@@ -402,9 +402,13 @@ type framer struct {
 	wbuf []byte
 
 	customPayload map[string][]byte
+
+	// prepared metadata LWT flag determined at runtime by negotiating
+	// corresponding CQL protocol extension with scylla server.
+	flagLWT int
 }
 
-func newFramer(r io.Reader, w io.Writer, compressor Compressor, version byte) *framer {
+func newFramer(r io.Reader, w io.Writer, compressor Compressor, version byte, cqlProtoExts []cqlProtocolExtension) *framer {
 	f := &framer{
 		wbuf:       make([]byte, defaultBufSize),
 		readBuffer: make([]byte, defaultBufSize),
@@ -437,6 +441,10 @@ func newFramer(r io.Reader, w io.Writer, compressor Compressor, version byte) *f
 
 	f.header = nil
 	f.traceID = nil
+
+	if lwtExt := findCQLProtoExtByName(cqlProtoExts, lwtAddMetadataMarkKey); lwtExt != nil {
+		f.flagLWT = (*lwtExt).(lwtAddMetadataMarkExt).lwtOptMetaBitMask
+	}
 
 	return f
 }
@@ -934,6 +942,9 @@ func (f *framer) readTypeInfo() TypeInfo {
 type preparedMetadata struct {
 	resultMetadata
 
+	// LWT query detected
+	lwt bool
+
 	// proto v4+
 	pkeyColumns []int
 }
@@ -961,6 +972,8 @@ func (f *framer) parsePreparedMetadata() preparedMetadata {
 		}
 		meta.pkeyColumns = pkeys
 	}
+
+	meta.lwt = meta.flags&f.flagLWT == f.flagLWT
 
 	if meta.flags&flagHasMorePages == flagHasMorePages {
 		meta.pagingState = copyBytes(f.readBytes())
