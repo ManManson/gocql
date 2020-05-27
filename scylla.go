@@ -13,6 +13,7 @@ type scyllaSupported struct {
 	shard     int
 	nrShards  int
 	msbIgnore uint64
+	lwtFlagMask int
 }
 
 func parseSupported(supported map[string][]string) scyllaSupported {
@@ -22,6 +23,7 @@ func parseSupported(supported map[string][]string) scyllaSupported {
 		scyllaPartitioner       = "SCYLLA_PARTITIONER"
 		scyllaShardingAlgorithm = "SCYLLA_SHARDING_ALGORITHM"
 		scyllaShardingIgnoreMSB = "SCYLLA_SHARDING_IGNORE_MSB"
+		scyllaLWTOptimizationFlagMask = "SCYLLA_LWT_OPTIMIZATION_FLAG_MASK"
 	)
 
 	var (
@@ -47,6 +49,13 @@ func parseSupported(supported map[string][]string) scyllaSupported {
 		if si.msbIgnore, err = strconv.ParseUint(s[0], 10, 64); err != nil {
 			if gocqlDebug {
 				Logger.Printf("scylla: failed to parse %s value %v: %s", scyllaShardingIgnoreMSB, s, err)
+			}
+		}
+	}
+	if s, ok := supported[scyllaLWTOptimizationFlagMask]; ok {
+		if si.lwtFlagMask, err = strconv.Atoi(s[0]); err != nil {
+			if gocqlDebug {
+				Logger.Printf("scylla: failed to parse %s value %v: %s", scyllaLWTOptimizationFlagMask, s, err)
 			}
 		}
 	}
@@ -76,6 +85,11 @@ func parseSupported(supported map[string][]string) scyllaSupported {
 func isScyllaConn(conn *Conn) bool {
 	s := parseSupported(conn.supported)
 	return s.nrShards != 0
+}
+
+func getScyllaLWTFlag(conn *Conn) int {
+	s := parseSupported(conn.supported)
+	return s.lwtFlagMask
 }
 
 // scyllaConnPicker is a specialised ConnPicker that selects connections based

@@ -161,7 +161,6 @@ const (
 
 	// prepare flags
 	flagWithPreparedKeyspace uint32 = 0x01
-	flagLWT                  int    = 0x80000000
 
 	// header flags
 	flagCompress      byte = 0x01
@@ -403,9 +402,11 @@ type framer struct {
 	wbuf []byte
 
 	customPayload map[string][]byte
+
+	flagLWT int
 }
 
-func newFramer(r io.Reader, w io.Writer, compressor Compressor, version byte) *framer {
+func newFramer(r io.Reader, w io.Writer, compressor Compressor, version byte, flagLWT int) *framer {
 	f := &framer{
 		wbuf:       make([]byte, defaultBufSize),
 		readBuffer: make([]byte, defaultBufSize),
@@ -438,6 +439,8 @@ func newFramer(r io.Reader, w io.Writer, compressor Compressor, version byte) *f
 
 	f.header = nil
 	f.traceID = nil
+
+	f.flagLWT = flagLWT
 
 	return f
 }
@@ -966,7 +969,7 @@ func (f *framer) parsePreparedMetadata() preparedMetadata {
 		meta.pkeyColumns = pkeys
 	}
 
-	meta.lwt = meta.flags&flagLWT == flagLWT
+	meta.lwt = meta.flags&f.flagLWT == f.flagLWT
 
 	if meta.flags&flagHasMorePages == flagHasMorePages {
 		meta.pagingState = copyBytes(f.readBytes())
