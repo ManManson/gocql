@@ -155,6 +155,7 @@ type Conn struct {
 	host            *HostInfo
 	supported       map[string][]string
 	scyllaSupported scyllaSupported
+	cqlProtoExts    []cqlProtocolExtension
 
 	session *Session
 
@@ -399,6 +400,7 @@ func (s *startupCoordinator) options(ctx context.Context) error {
 	// Keep raw supported multimap for debug purposes
 	s.conn.supported = v.supported
 	s.conn.scyllaSupported = parseSupported(s.conn.supported)
+	s.conn.cqlProtoExts = parseCQLProtocolExtensions(s.conn.supported)
 
 	return s.startup(ctx)
 }
@@ -423,9 +425,11 @@ func (s *startupCoordinator) startup(ctx context.Context) error {
 		}
 	}
 
-	lwt_opt_mask := s.conn.supported["SCYLLA_LWT_OPTIMIZATION_FLAG_MASK"]
-	if lwt_opt_mask != nil {
-		m["SCYLLA_LWT_OPTIMIZATION"] = "1"
+	for _, ext := range s.conn.cqlProtoExts {
+		var serialized = ext.serialize()
+		for k, v := range serialized {
+			m[k] = v
+		}
 	}
 
 	frame, err := s.write(ctx, &writeStartupFrame{opts: m})
@@ -641,7 +645,7 @@ func (c *Conn) recv(ctx context.Context) error {
 		return fmt.Errorf("gocql: frame header stream is beyond call expected bounds: %d", head.stream)
 	} else if head.stream == -1 {
 		// TODO: handle cassandra event frames, we shouldnt get any currently
-		framer := newFramer(c, c, c.compressor, c.version, getScyllaLWTFlag(c))
+		framer := newFramer(c, c, c.compressor, c.version, c.cqlProtoExts)
 		if err := framer.readFrame(&head); err != nil {
 			return err
 		}
@@ -650,7 +654,7 @@ func (c *Conn) recv(ctx context.Context) error {
 	} else if head.stream <= 0 {
 		// reserved stream that we dont use, probably due to a protocol error
 		// or a bug in Cassandra, this should be an error, parse it and return.
-		framer := newFramer(c, c, c.compressor, c.version, getScyllaLWTFlag(c))
+		framer := newFramer(c, c, c.compressor, c.version, c.cqlProtoExts)
 		if err := framer.readFrame(&head); err != nil {
 			return err
 		}
@@ -865,7 +869,7 @@ func (c *Conn) exec(ctx context.Context, req frameWriter, tracer Tracer) (*frame
 	}
 
 	// resp is basically a waiting semaphore protecting the framer
-	framer := newFramer(c, c, c.compressor, c.version, getScyllaLWTFlag(c))
+	framer := newFramer(c, c, c.compressor, c.version, c.cqlProtoExts)
 
 	call := &callReq{
 		framer:   framer,
